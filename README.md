@@ -1,4 +1,4 @@
-# Voice Radar
+# Voice Radar Deepgram
 
 Ditado por voz no Windows (Deepgram) + um "radar" que descobre **quais atividades você mais repete**, para você saber o que automatizar primeiro.
 
