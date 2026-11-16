@@ -1,0 +1,11 @@
+# Servidor Linux (opcional): classifica à noite os eventos enviados pelo Windows.
+# Ajuste ExecStart para o caminho onde você clonou o repositório.
+# Requer o Claude Code CLI (`claude`) instalado e logado nesse servidor.
+[Unit]
+Description=Voice Radar nightly classification
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/voice-radar/radar/radar.py nightly --days 2
+TimeoutStartSec=900

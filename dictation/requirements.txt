@@ -1,0 +1,8 @@
+numpy
+sounddevice
+pyperclip
+pyautogui
+keyboard
+pystray
+Pillow
+websockets

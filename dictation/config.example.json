@@ -1,0 +1,20 @@
+{
+  "hotkey": "ctrl+win",
+  "secondary_hotkey": "f8",
+  "model": "nova-3",
+  "language": "pt-BR",
+  "smart_format": true,
+  "punctuate": true,
+  "auto_paste": true,
+  "copy_to_clipboard": true,
+  "sound_feedback": true,
+  "sound_volume": 0.35,
+  "samplerate": 16000,
+  "channels": 1,
+  "min_duration_sec": 0.3,
+  "max_duration_sec": 180.0,
+  "hud_duration_sec": 4.5,
+  "env_file_path": "",
+  "live_typing": true,
+  "endpointing_ms": 300
+}

@@ -1,0 +1,9 @@
+.env
+*.log
+history.txt
+config.json
+__pycache__/
+*.pyc
+*.bak*
+.voice-radar/
+radar.db
