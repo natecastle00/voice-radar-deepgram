@@ -14,7 +14,9 @@ permissions:
 
 jobs:
   notify:
+    if: github.repository == 'natecastle00/voice-radar-deepgram'
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     env:
       EVOLUTION_URL: ${{ secrets.EVOLUTION_URL }}
       EVOLUTION_API_KEY: ${{ secrets.EVOLUTION_API_KEY }}
