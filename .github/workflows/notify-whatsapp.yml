@@ -1,0 +1,49 @@
+# Avisa um grupo de WhatsApp (via Evolution API) a cada push na main e a cada release.
+# Precisa dos secrets: EVOLUTION_URL, EVOLUTION_API_KEY, EVOLUTION_INSTANCE, WHATSAPP_GROUP_JID.
+# Sem os secrets (forks, clones), o envio é simplesmente pulado.
+name: Notificar WhatsApp
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    env:
+      EVOLUTION_URL: ${{ secrets.EVOLUTION_URL }}
+      EVOLUTION_API_KEY: ${{ secrets.EVOLUTION_API_KEY }}
+      EVOLUTION_INSTANCE: ${{ secrets.EVOLUTION_INSTANCE }}
+      WHATSAPP_GROUP_JID: ${{ secrets.WHATSAPP_GROUP_JID }}
+      REPO: ${{ github.repository }}
+      EVENT: ${{ github.event_name }}
+      ACTOR: ${{ github.actor }}
+      COMMIT_MSG: ${{ github.event.head_commit.message }}
+      COMMIT_COUNT: ${{ github.event.commits && length(github.event.commits) || 0 }}
+      COMPARE_URL: ${{ github.event.compare }}
+      RELEASE_NAME: ${{ github.event.release.name || github.event.release.tag_name }}
+      RELEASE_URL: ${{ github.event.release.html_url }}
+    steps:
+      - name: Enviar mensagem
+        run: |
+          if [ -z "$EVOLUTION_URL" ] || [ -z "$EVOLUTION_API_KEY" ] || [ -z "$EVOLUTION_INSTANCE" ] || [ -z "$WHATSAPP_GROUP_JID" ]; then
+            echo "Secrets da Evolution API ausentes; notificação pulada."
+            exit 0
+          fi
+          if [ "$EVENT" = "release" ]; then
+            TEXT=$(printf '🚀 *%s*\nNova release: %s\n%s' "$REPO" "$RELEASE_NAME" "$RELEASE_URL")
+          else
+            FIRST_LINE=$(printf '%s' "$COMMIT_MSG" | head -n 1 | cut -c1-200)
+            TEXT=$(printf '🔔 *%s*\n%s fez push (%s commit(s))\n"%s"\n%s' "$REPO" "$ACTOR" "$COMMIT_COUNT" "$FIRST_LINE" "$COMPARE_URL")
+          fi
+          BODY=$(jq -n --arg number "$WHATSAPP_GROUP_JID" --arg text "$TEXT" '{number: $number, text: $text}')
+          INSTANCE=$(jq -rn --arg i "$EVOLUTION_INSTANCE" '$i|@uri')
+          curl -fsS -X POST "${EVOLUTION_URL%/}/message/sendText/${INSTANCE}" \
+            -H "apikey: $EVOLUTION_API_KEY" -H "Content-Type: application/json" \
+            -d "$BODY" -o /dev/null
+          echo "Notificação enviada."

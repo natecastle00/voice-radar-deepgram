@@ -76,3 +76,7 @@ O radar registra o que você dita e o título da janela ativa. Revise `~/.voice-
 ## Licença
 
 MIT
+
+## Notificações no WhatsApp (opcional)
+
+`.github/workflows/notify-whatsapp.yml` avisa um grupo de WhatsApp via [Evolution API](https://github.com/EvolutionAPI/evolution-api) a cada push na `main` e a cada release. Para usar no seu fork, crie os secrets `EVOLUTION_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_INSTANCE` e `WHATSAPP_GROUP_JID`. Sem eles, o envio é pulado.
