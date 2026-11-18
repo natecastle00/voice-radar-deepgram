@@ -7,7 +7,7 @@ foi automatizado. Só biblioteca padrão: roda igual no Windows e na VPS.
 
 Comandos:
   log       registra uma fala (usado pelo ditado)
-  sync      (Windows) envia eventos para a VPS
+  sync      (Windows/Mac) envia eventos para o servidor
   extract   classifica um dia (ou N dias) com o Claude e grava no banco
   export    gera export/activities.json (para painéis/dashboards)
   nightly   sync + extract + export
@@ -31,7 +31,7 @@ EVENTS = HOME / "events"
 EXPORT = HOME / "export"
 WORK = HOME / "work"
 DB_PATH = HOME / "radar.db"
-HOST = os.environ.get("VOICE_RADAR_HOST") or ("windows" if os.name == "nt" else "vps")
+HOST = os.environ.get("VOICE_RADAR_HOST") or ("windows" if os.name == "nt" else "mac" if sys.platform == "darwin" else "vps")
 MODEL = os.environ.get("VOICE_RADAR_MODEL", "haiku")
 VPS_ALIAS = os.environ.get("VOICE_RADAR_VPS", "")  # alias SSH do servidor; vazio = sem sync
 VPS_HOME = os.environ.get("VOICE_RADAR_VPS_HOME", ".voice-radar")
@@ -146,10 +146,10 @@ def load_events(date):
     return out
 
 
-# ---------- sync (Windows -> VPS) ----------
+# ---------- sync (Windows/Mac -> servidor) ----------
 
 def sync():
-    if not VPS_ALIAS or HOST != "windows" or os.environ.get("VOICE_RADAR_HOME"):
+    if not VPS_ALIAS or HOST not in ("windows", "mac") or os.environ.get("VOICE_RADAR_HOME"):
         return 0
     src = EVENTS / HOST
     if not src.exists():

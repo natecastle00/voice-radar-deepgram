@@ -1,20 +1,8 @@
 import os
 import sys
 
-# Ensure System32 and Python directories are in PATH and DLL search paths
-sys_dir = os.environ.get("SystemRoot", r"C:\Windows") + r"\System32"
-py_dir = os.path.dirname(sys.executable)
-if "PATH" in os.environ:
-    os.environ["PATH"] = f"{sys_dir};{py_dir};" + os.environ["PATH"]
-else:
-    os.environ["PATH"] = f"{sys_dir};{py_dir}"
-
-if hasattr(os, "add_dll_directory"):
-    try:
-        os.add_dll_directory(sys_dir)
-        os.add_dll_directory(py_dir)
-    except Exception:
-        pass
+import platform_support as plat
+plat.setup_env()
 
 import io
 import time
@@ -23,42 +11,21 @@ import wave
 import logging
 import threading
 import datetime
-import ctypes
-from ctypes import wintypes
 import urllib.request
 import urllib.error
 import numpy as np
 import sounddevice as sd
 import pyperclip
-import pyautogui
-import keyboard
 import pystray
 from PIL import Image, ImageDraw
 import tkinter as tk
-from live import LiveTranscriber, Typer, MAGIC
+from live import LiveTranscriber
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "radar"))
 try:
     import radar
 except Exception:
     radar = None
 from tkinter import ttk
-
-# Win32 Constants
-user32 = ctypes.windll.user32
-kernel32 = ctypes.windll.kernel32
-
-WH_KEYBOARD_LL = 13
-WM_KEYDOWN = 0x0100
-WM_KEYUP = 0x0101
-WM_SYSKEYDOWN = 0x0104
-WM_SYSKEYUP = 0x0105
-
-VK_LWIN = 0x5B
-VK_RWIN = 0x5C
-VK_CONTROL = 0x11
-VK_LCONTROL = 0xA2
-VK_RCONTROL = 0xA3
-VK_F8 = 0x77
 
 # Paths & Logging
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -171,25 +138,6 @@ def get_deepgram_api_key():
             logger.error(f"Erro ao ler .env: {e}")
     return None
 
-def foreground_info():
-    try:
-        hwnd = user32.GetForegroundWindow()
-        buf = ctypes.create_unicode_buffer(256)
-        user32.GetWindowTextW(hwnd, buf, 256)
-        pid = wintypes.DWORD()
-        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-        h = kernel32.OpenProcess(0x1000, False, pid.value)
-        app = ""
-        if h:
-            n = wintypes.DWORD(260)
-            b2 = ctypes.create_unicode_buffer(260)
-            if kernel32.QueryFullProcessImageNameW(h, 0, b2, ctypes.byref(n)):
-                app = os.path.basename(b2.value)
-            kernel32.CloseHandle(h)
-        return app, buf.value
-    except Exception:
-        return "", ""
-
 _last_sync = [0.0]
 
 def record_activity(text, app="", title=""):
@@ -266,7 +214,7 @@ class DictationHUD:
             self.root.after_cancel(self.hide_timer)
             self.hide_timer = None
         self.title_label.config(text="🔴 GRAVANDO...", fg="#ef4444")
-        msg = "Fale agora • Solte Ctrl+Win ou clique novamente para finalizar"
+        msg = f"Fale agora • Solte {plat.HOTKEY_LABEL} ou clique novamente para finalizar"
         self.body_label.config(text=msg)
         self._reposition()
         self.window.deiconify()
@@ -278,7 +226,7 @@ class DictationHUD:
         self.title_label.config(text="🔴 DIGITANDO AO VIVO...", fg="#ef4444")
         tail = typed[-160:]
         body = (tail + (" " if tail and interim else "") + (f"[{interim}]" if interim else "")).strip()
-        self.body_label.config(text=body or "Fale agora • Solte Ctrl+Win ou clique novamente para finalizar")
+        self.body_label.config(text=body or f"Fale agora • Solte {plat.HOTKEY_LABEL} ou clique novamente para finalizar")
         self._reposition()
         self.window.deiconify()
 
@@ -439,108 +387,6 @@ class HistoryWindow:
         except Exception:
             pass
 
-# Low-Level Kernel Keyboard Hook (Ctrl + Win & F8)
-class CtrlWinKernelHook:
-    def __init__(self, on_press_both, on_release_both, on_f8):
-        self.on_press_both = on_press_both
-        self.on_release_both = on_release_both
-        self.on_f8 = on_f8
-        self.ctrl_down = False
-        self.win_down = False
-        self.hook = None
-        self.thread = None
-        self.stop_event = threading.Event()
-        self._hook_proc_ref = None
-        self.ctrl_vk = VK_LCONTROL
-        self.win_vk = VK_LWIN
-
-    def held_modifiers(self):
-        out = []
-        if self.ctrl_down:
-            out.append(self.ctrl_vk)
-        if self.win_down:
-            out.append(self.win_vk)
-        return out
-
-    def start(self):
-        self.thread = threading.Thread(target=self._run, daemon=True)
-        self.thread.start()
-
-    def _run(self):
-        class KBDLLHOOKSTRUCT(ctypes.Structure):
-            _fields_ = [
-                ("vkCode", wintypes.DWORD),
-                ("scanCode", wintypes.DWORD),
-                ("flags", wintypes.DWORD),
-                ("time", wintypes.DWORD),
-                ("dwExtraInfo", ctypes.c_size_t)
-            ]
-
-        HOOKPROC = ctypes.WINFUNCTYPE(ctypes.c_ssize_t, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
-        user32.CallNextHookEx.argtypes = [ctypes.c_void_p, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM]
-        user32.CallNextHookEx.restype = ctypes.c_ssize_t
-        user32.SetWindowsHookExW.argtypes = [ctypes.c_int, HOOKPROC, wintypes.HINSTANCE, wintypes.DWORD]
-        user32.SetWindowsHookExW.restype = ctypes.c_void_p
-        user32.UnhookWindowsHookEx.argtypes = [ctypes.c_void_p]
-
-        def hook_proc(nCode, wParam, lParam):
-            if nCode >= 0:
-                kb = KBDLLHOOKSTRUCT.from_address(lParam)
-                vk = kb.vkCode
-                if kb.dwExtraInfo == MAGIC:
-                    return user32.CallNextHookEx(None, nCode, wParam, lParam)
-                is_down = wParam in (WM_KEYDOWN, WM_SYSKEYDOWN)
-                is_up = wParam in (WM_KEYUP, WM_SYSKEYUP)
-
-                prev_both = self.ctrl_down and self.win_down
-
-                if vk in (VK_CONTROL, VK_LCONTROL, VK_RCONTROL):
-                    self.ctrl_down = is_down
-                    if is_down:
-                        self.ctrl_vk = vk if vk != VK_CONTROL else VK_LCONTROL
-                elif vk in (VK_LWIN, VK_RWIN):
-                    self.win_down = is_down
-                    if is_down:
-                        self.win_vk = vk
-
-                curr_both = self.ctrl_down and self.win_down
-
-                # Transition to BOTH down
-                if not prev_both and curr_both:
-                    threading.Thread(target=self.on_press_both, daemon=True).start()
-                    # Returning 0 ensures Windows knows Ctrl is down, so Start menu never opens!
-                    return 0
-
-                # Transition to RELEASE of either key
-                elif prev_both and not curr_both:
-                    threading.Thread(target=self.on_release_both, daemon=True).start()
-                    return 0
-
-                # F8 Toggle
-                elif vk == VK_F8 and is_down:
-                    threading.Thread(target=self.on_f8, daemon=True).start()
-                    return 1
-
-            return user32.CallNextHookEx(None, nCode, wParam, lParam)
-
-        self._hook_proc_ref = HOOKPROC(hook_proc)
-        self.hook = user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._hook_proc_ref, None, 0)
-        if not self.hook:
-            logger.error(f"Falha ao instalar gancho Win32: {ctypes.GetLastError()}")
-            return
-
-        logger.info("Gancho Win32 (Ctrl + Win & F8) ativo.")
-        msg = wintypes.MSG()
-        while not self.stop_event.is_set():
-            if user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):
-                user32.TranslateMessage(ctypes.byref(msg))
-                user32.DispatchMessageW(ctypes.byref(msg))
-            else:
-                time.sleep(0.01)
-
-        user32.UnhookWindowsHookEx(self.hook)
-        self.hook = None
-
 def create_tray_image(state="idle"):
     size = 64
     image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
@@ -589,7 +435,7 @@ class DeepgramDictationApp:
         self.live = None
         self.live_typed = []
         self.live_error = False
-        self.typer = Typer(lambda: self.hook.held_modifiers() if self.hook else [])
+        self.typer = plat.Typer(lambda: self.hook.held_modifiers() if self.hook else [])
 
     def audio_callback(self, indata, frames_count, time_info, status):
         if self.is_recording:
@@ -642,7 +488,7 @@ class DeepgramDictationApp:
             pass
 
     def on_press_both(self):
-        """Disparado quando Ctrl + Win estão ambos pressionados."""
+        """Disparado quando as duas teclas do atalho estão pressionadas."""
         now = time.time()
         self.both_down_start = now
         with self.lock:
@@ -691,12 +537,12 @@ class DeepgramDictationApp:
         self.frames = []
         self.is_recording = True
         self.start_time = time.time()
-        self.fg_app, self.fg_title = foreground_info()
+        self.fg_app, self.fg_title = plat.foreground_info()
         play_sound("start")
-        logger.info("🎙️ Gravação iniciada via Ctrl+Win...")
+        logger.info(f"🎙️ Gravação iniciada via {plat.HOTKEY_LABEL}...")
 
         self.root.after(0, self.hud.show_recording)
-        self.update_tray_state("recording", "Deepgram: Gravando áudio... (Ctrl+Win)")
+        self.update_tray_state("recording", f"Deepgram: Gravando áudio... ({plat.HOTKEY_LABEL})")
         self._start_live()
 
         try:
@@ -767,7 +613,7 @@ class DeepgramDictationApp:
                 threading.Thread(target=live.stop, args=(1.0,), daemon=True).start()
             play_sound("empty")
             self.root.after(0, self.hud.show_empty)
-            self.update_tray_state("idle", "Deepgram Dictation (Ctrl+Win) - Pronto")
+            self.update_tray_state("idle", f"Deepgram Dictation ({plat.HOTKEY_LABEL}) - Pronto")
             return
 
         if live is not None:
@@ -787,7 +633,7 @@ class DeepgramDictationApp:
                 return
             play_sound("empty")
             self.root.after(0, self.hud.show_empty)
-            self.update_tray_state("idle", "Deepgram Dictation (Ctrl+Win) - Nenhuma fala")
+            self.update_tray_state("idle", f"Deepgram Dictation ({plat.HOTKEY_LABEL}) - Nenhuma fala")
             return
         play_sound("success")
         save_to_history(text)
@@ -871,7 +717,7 @@ class DeepgramDictationApp:
             if not transcript:
                 play_sound("empty")
                 self.root.after(0, self.hud.show_empty)
-                self.update_tray_state("idle", "Deepgram Dictation (Ctrl+Win) - Nenhuma fala")
+                self.update_tray_state("idle", f"Deepgram Dictation ({plat.HOTKEY_LABEL}) - Nenhuma fala")
                 return
 
             # Sucesso
@@ -889,13 +735,7 @@ class DeepgramDictationApp:
             # Cola no cursor ativo
             if config.get("auto_paste", True):
                 time.sleep(0.12)
-                for k in ['ctrl', 'alt', 'shift', 'windows']:
-                    try:
-                        keyboard.release(k)
-                    except Exception:
-                        pass
-                time.sleep(0.05)
-                pyautogui.hotkey('ctrl', 'v')
+                plat.paste()
 
             preview = (transcript[:45] + "...") if len(transcript) > 45 else transcript
             self.update_tray_state("idle", f"Última: {preview}")
@@ -906,14 +746,14 @@ class DeepgramDictationApp:
             self.root.after(0, lambda: self.hud.show_error(str(e)))
             self.update_tray_state("error", f"Erro: {e}")
             time.sleep(2)
-            self.update_tray_state("idle", "Deepgram Dictation (Ctrl+Win) - Pronto")
+            self.update_tray_state("idle", f"Deepgram Dictation ({plat.HOTKEY_LABEL}) - Pronto")
 
     def open_history(self, icon=None, item=None):
         self.root.after(0, self.history_win.show)
 
     def open_config(self, icon=None, item=None):
         try:
-            os.startfile(CONFIG_PATH)
+            plat.open_file(CONFIG_PATH)
         except Exception as e:
             logger.error(f"Erro ao abrir config: {e}")
 
@@ -929,19 +769,20 @@ class DeepgramDictationApp:
         os._exit(0)
 
     def run(self):
-        logger.info("Iniciando Deepgram Dictation com HUD e Ctrl+Win...")
+        logger.info(f"Iniciando Deepgram Dictation com HUD e {plat.HOTKEY_LABEL}...")
         
         # Inicia Gancho de Baixo Nível
-        self.hook = CtrlWinKernelHook(
+        self.hook = plat.Hotkeys(
             on_press_both=self.on_press_both,
             on_release_both=self.on_release_both,
-            on_f8=self.on_f8_toggle
+            on_f8=self.on_f8_toggle,
+            secondary=config.get("secondary_hotkey", "f8")
         )
         self.hook.start()
 
         # Configura Bandeja do Sistema (Ícones Ocultos)
         menu = pystray.Menu(
-            pystray.MenuItem("🎙️ Alternar Gravação (Ctrl + Win)", lambda icon, item: self.toggle_recording()),
+            pystray.MenuItem(f"🎙️ Alternar Gravação ({plat.HOTKEY_LABEL})", lambda icon, item: self.toggle_recording()),
             pystray.MenuItem("📋 Ver Histórico de Transcrições", self.open_history),
             pystray.MenuItem("⚙️ Configurações (config.json)", self.open_config),
             pystray.Menu.SEPARATOR,
@@ -952,12 +793,12 @@ class DeepgramDictationApp:
         self.tray_icon = pystray.Icon(
             "DeepgramDictation",
             initial_icon,
-            "Deepgram Dictation (Ctrl + Win) - Pronto",
+            f"Deepgram Dictation ({plat.HOTKEY_LABEL}) - Pronto",
             menu
         )
         self.tray_icon.run_detached()
 
-        logger.info("Serviço ativo na barra de tarefas (Ocultos). Atalho: CTRL + WIN (Segurar ou 2x/Clique) | F8")
+        logger.info("Serviço ativo na barra de tarefas (Ocultos). Atalho: " + plat.HOTKEY_LABEL + " (Segurar ou 2x/Clique) | F8")
         
         # Tkinter Event Loop
         self.root.mainloop()

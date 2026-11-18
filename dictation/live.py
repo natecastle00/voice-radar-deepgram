@@ -1,86 +1,14 @@
-"""Streaming Deepgram (WebSocket) + digitação em tempo real via SendInput."""
-import ctypes
+"""Streaming Deepgram (WebSocket). A digitação ao vivo fica em platform_support."""
 import json
 import logging
 import queue
 import threading
 import time
 import urllib.parse
-from ctypes import wintypes
 
 from websockets.sync.client import connect
 
 logger = logging.getLogger("DeepgramDictation")
-
-user32 = ctypes.windll.user32
-MAGIC = 0x4D4F4F4E  # marca eventos injetados por nós (o gancho ignora)
-
-KEYEVENTF_KEYUP = 0x0002
-KEYEVENTF_UNICODE = 0x0004
-
-
-class MOUSEINPUT(ctypes.Structure):
-    _fields_ = [("dx", wintypes.LONG), ("dy", wintypes.LONG), ("mouseData", wintypes.DWORD),
-                ("dwFlags", wintypes.DWORD), ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
-
-
-class KEYBDINPUT(ctypes.Structure):
-    _fields_ = [("wVk", wintypes.WORD), ("wScan", wintypes.WORD), ("dwFlags", wintypes.DWORD),
-                ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
-
-
-class _U(ctypes.Union):
-    _fields_ = [("ki", KEYBDINPUT), ("mi", MOUSEINPUT)]
-
-
-class INPUT(ctypes.Structure):
-    _fields_ = [("type", wintypes.DWORD), ("u", _U)]
-
-
-user32.SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(INPUT), ctypes.c_int]
-user32.SendInput.restype = wintypes.UINT
-
-
-def _key(vk=0, scan=0, flags=0):
-    i = INPUT()
-    i.type = 1
-    i.u.ki = KEYBDINPUT(vk, scan, flags, 0, MAGIC)
-    return i
-
-
-def _send(events):
-    if not events:
-        return
-    arr = (INPUT * len(events))(*events)
-    user32.SendInput(len(events), arr, ctypes.sizeof(INPUT))
-
-
-class Typer:
-    """Digita texto Unicode no app em foco. Solta Ctrl/Win físicos durante a digitação."""
-
-    def __init__(self, held_fn):
-        # held_fn() -> lista de VKs de modificadores fisicamente pressionados (ex.: [0xA2, 0x5B])
-        self.held_fn = held_fn
-        self.lock = threading.Lock()
-
-    def type_text(self, text):
-        if not text:
-            return
-        units = text.encode("utf-16-le")
-        codes = [int.from_bytes(units[i:i + 2], "little") for i in range(0, len(units), 2)]
-        with self.lock:
-            held = list(self.held_fn())
-            _send([_key(vk=v, flags=KEYEVENTF_KEYUP) for v in held])
-            ev = []
-            for c in codes:
-                ev.append(_key(scan=c, flags=KEYEVENTF_UNICODE))
-                ev.append(_key(scan=c, flags=KEYEVENTF_UNICODE | KEYEVENTF_KEYUP))
-            for k in range(0, len(ev), 200):
-                _send(ev[k:k + 200])
-            # restaura só o que ainda está fisicamente pressionado
-            still = set(self.held_fn())
-            _send([_key(vk=v) for v in held if v in still])
-
 
 class LiveTranscriber:
     def __init__(self, api_key, cfg, on_interim, on_final, on_error):

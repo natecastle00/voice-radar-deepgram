@@ -1,9 +1,9 @@
 # Voice Radar Deepgram
 
-Ditado por voz no Windows (Deepgram) + um "radar" que descobre **quais atividades você mais repete**, para você saber o que automatizar primeiro.
+Ditado por voz no Windows e no macOS (Deepgram) + um "radar" que descobre **quais atividades você mais repete**, para você saber o que automatizar primeiro.
 
 ```
-Ctrl+Win (segura ou 2x)  →  Deepgram  →  texto digitado ao vivo onde o cursor está
+Ctrl+Win no Windows / Ctrl+Option no Mac (segura ou 2x)  →  Deepgram  →  texto digitado ao vivo onde o cursor está
                                   └──→  cada fala é registrada (radar log)
                                                 └──→ à noite o radar classifica em ATIVIDADES
                                                      e gera ranking diário/semanal
@@ -13,17 +13,18 @@ Ctrl+Win (segura ou 2x)  →  Deepgram  →  texto digitado ao vivo onde o curso
 
 | Pasta | O que faz |
 |---|---|
-| `dictation/` | App de bandeja do Windows: atalho global, gravação, transcrição em tempo real (WebSocket Deepgram `nova-3`, `pt-BR`), digitação ao vivo, HUD e histórico. |
+| `dictation/` | App de bandeja (Windows e macOS): atalho global, gravação, transcrição em tempo real (WebSocket Deepgram `nova-3`, `pt-BR`), digitação ao vivo, HUD e histórico. |
+| `dictation/platform_support/` | Código específico de cada sistema: atalho global, digitação ao vivo, app em foco e colar (Win32 no Windows; pynput e Quartz no Mac). |
 | `radar/radar.py` | CLI só com biblioteca padrão: registra falas, classifica por dia com o Claude Code CLI, guarda em SQLite, ranqueia e exporta `activities.json`. |
 | `deploy/` | Exemplos: tarefa agendada do Windows e `systemd` (service + timer) para rodar o radar numa VPS. |
 
 ## Requisitos
 
-- Windows 10/11 e Python 3.10+
+- Windows 10/11 ou macOS 12+, com Python 3.10+ (no Mac, instale também o Tk: `brew install python-tk` se usar o Python do Homebrew)
 - Conta [Deepgram](https://deepgram.com) (chave de API)
 - Para a classificação: [Claude Code CLI](https://claude.com/claude-code) (`claude`) instalado e autenticado
 
-## Instalação do ditado
+## Instalação do ditado (Windows)
 
 ```powershell
 cd dictation
@@ -37,9 +38,28 @@ A chave é lida de `DEEPGRAM_API_KEY` (variável de ambiente), do `.env` ao lado
 
 Iniciar sem janela: `start_silent.vbs`. Iniciar com o Windows: `install_startup.ps1` (remover: `remove_startup.ps1`). Encerrar: `stop.bat`.
 
+## Instalação do ditado (macOS)
+
+```bash
+cd dictation
+python3 -m pip install -r requirements.txt
+cp .env.example .env            # edite e cole sua DEEPGRAM_API_KEY
+./start.sh
+```
+
+No primeiro uso, libere em **Ajustes do Sistema → Privacidade e Segurança** o app que roda o Python (Terminal, iTerm ou o próprio `python3`):
+
+- **Microfone** (gravação),
+- **Acessibilidade** (digitar ao vivo e colar),
+- **Monitoramento de Entrada** (atalho global).
+
+Opcionais: `./install_launchagent.sh` inicia o ditado ao fazer login (`./uninstall_launchagent.sh` remove) e `./stop.sh` encerra. No Mac o atalho é **Ctrl+Option** (segurar ou toque rápido), com `F8` como tecla secundária (nos Macs com teclas de mídia, use `Fn+F8` ou troque `secondary_hotkey` no `config.json`). O título da janela no radar só aparece se você liberar também a **Gravação de Tela**.
+
+> O suporte ao macOS foi escrito sem teste em um Mac real. Se algo falhar, abra uma issue com o trecho do `dictation.log`.
+
 ### Uso
 
-- **Segurar** `Ctrl+Win` enquanto fala; soltar encerra.
+- **Segurar** `Ctrl+Win` (Mac: `Ctrl+Option`) enquanto fala; soltar encerra.
 - **Toque rápido** em `Ctrl+Win` (ou `F8`) liga a gravação com mãos livres; outro toque encerra.
 - O texto aparece digitado ao vivo (`live_typing`), fica no clipboard e no histórico (`history.txt`, clique direito no ícone da bandeja).
 
@@ -62,6 +82,7 @@ Variáveis de ambiente: `VOICE_RADAR_HOME` (pasta de dados), `VOICE_RADAR_MODEL`
 ### Rodar toda noite
 
 - Windows: `deploy\windows-nightly.ps1` cria a tarefa agendada às 23:50.
+- macOS: `deploy/macos-nightly.sh` cria um LaunchAgent às 23:50.
 - Servidor Linux (opcional): copie o repositório para `/opt/voice-radar`, instale `deploy/voice-radar.service` e `.timer` em `/etc/systemd/system/` e rode `systemctl enable --now voice-radar.timer`.
 - Sync Windows → servidor: defina `VOICE_RADAR_VPS` com um alias SSH (e `VOICE_RADAR_VPS_HOME`, padrão `.voice-radar`). Sem isso, o sync fica desligado.
 
@@ -71,7 +92,7 @@ Variáveis de ambiente: `VOICE_RADAR_HOME` (pasta de dados), `VOICE_RADAR_MODEL`
 
 ## Privacidade
 
-O radar registra o que você dita e o título da janela ativa. Revise `~/.voice-radar` antes de compartilhar qualquer dado, e não cole segredos falando em voz alta (a classificação ignora credenciais citadas, mas o texto bruto fica no log local).
+O radar registra o que você dita, o app em foco e o título da janela ativa. Revise `~/.voice-radar` antes de compartilhar qualquer dado, e não cole segredos falando em voz alta (a classificação ignora credenciais citadas, mas o texto bruto fica no log local).
 
 ## Licença
 

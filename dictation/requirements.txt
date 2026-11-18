@@ -1,8 +1,13 @@
 numpy
 sounddevice
 pyperclip
-pyautogui
-keyboard
-pystray
 Pillow
+pystray
 websockets
+# Windows
+keyboard; sys_platform == "win32"
+pyautogui; sys_platform == "win32"
+# macOS
+pynput; sys_platform == "darwin"
+pyobjc-framework-Cocoa; sys_platform == "darwin"
+pyobjc-framework-Quartz; sys_platform == "darwin"
